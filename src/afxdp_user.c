@@ -293,6 +293,12 @@ void *PollXSK(void *data)
         if (ret <= 0 || ret > 1)
             continue;
 
+        uint32_t idx_rx = 0;
+
+        unsigned int rcvd = xsk_ring_cons__peek(&xsk->rx, RX_BATCH_SIZE, &idx_rx);
+        if (!rcvd)
+            continue;
+
         fprintf(stdout, "Received packet from AF_XDP socket\n");
     }
 
