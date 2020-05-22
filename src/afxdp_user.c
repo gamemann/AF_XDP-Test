@@ -330,6 +330,8 @@ int main(int argc, char **argv)
 
     if (!bpf_obj) 
     {
+        fprintf(stderr, "Error opening BPF object file.");
+
         exit(EXIT_FAILURE);
     }
 
@@ -348,6 +350,7 @@ int main(int argc, char **argv)
 	if (setrlimit(RLIMIT_MEMLOCK, &rlim)) 
     {
 		fprintf(stderr, "ERROR: setrlimit(RLIMIT_MEMLOCK) \"%s\"\n", strerror(errno));
+
 		exit(EXIT_FAILURE);
 	}
 
@@ -375,7 +378,7 @@ int main(int argc, char **argv)
         {
             fprintf(stderr, "ERROR: Can't create umem \"%s\"\n", strerror(errno));
             
-            exit(EXIT_FAILURE);
+            continue;
         }
 
         /* Open and configure the AF_XDP (xsk) socket */
@@ -385,12 +388,14 @@ int main(int argc, char **argv)
         {
             fprintf(stderr, "ERROR: Can't setup AF_XDP socket \"%s\"\n", strerror(errno));
             
-            exit(EXIT_FAILURE);
+            continue;
         }
 
         pthread_t tid;
 
         pthread_create(&tid, NULL, PollXSK, (void *)xsk_socket);
+
+        fprintf(stdout, "Created thread %d\n", i);
     }
 
 	/* Cleanup */
