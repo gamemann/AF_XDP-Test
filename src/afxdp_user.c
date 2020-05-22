@@ -52,6 +52,7 @@ struct xsk_socket_info
 
 static int cont = 1;
 const char *dev = "ens3";
+static int progfd;
 
 void ShutDown(int tmp)
 {
@@ -201,6 +202,8 @@ struct bpf_object *load_bpf_object_file__simple(const char *filename)
         fprintf(stderr, "Error loading XDP program. File => %s. Error => %s. Error Num => %d\n", filename, strerror(-err), err);
     }
 
+    progfd = first_prog_fd;
+
     return obj;
 }
 
@@ -220,21 +223,21 @@ static int xdp_detach(int ifindex, uint32_t xdp_flags)
     return EXIT_SUCCESS;
 }
 
-static int xdp_attach(int ifindex, uint32_t *xdp_flags, int prog_fd)
+static int xdp_attach(int ifindex, uint32_t xdp_flags, int prog_fd)
 {
     int err;
     
-    err = bpf_set_link_xdp_fd(ifindex, prog_fd, *xdp_flags);
+    err = bpf_set_link_xdp_fd(ifindex, prog_fd, xdp_flags);
 
-    if (err == -EEXIST && !(*xdp_flags & XDP_FLAGS_UPDATE_IF_NOEXIST))
+    if (err == -EEXIST && !(xdp_flags & XDP_FLAGS_UPDATE_IF_NOEXIST))
     {
         
-        uint32_t oldflags = *xdp_flags;
+        uint32_t oldflags = xdp_flags;
 
-        *xdp_flags &= ~XDP_FLAGS_MODES;
-        *xdp_flags |= (oldflags & XDP_FLAGS_SKB_MODE) ? XDP_FLAGS_DRV_MODE : XDP_FLAGS_SKB_MODE;
+        xdp_flags &= ~XDP_FLAGS_MODES;
+        xdp_flags |= (oldflags & XDP_FLAGS_SKB_MODE) ? XDP_FLAGS_DRV_MODE : XDP_FLAGS_SKB_MODE;
 
-        err = bpf_set_link_xdp_fd(ifindex, -1, *xdp_flags);
+        err = bpf_set_link_xdp_fd(ifindex, -1, xdp_flags);
 
         if (!err)
         {
@@ -252,7 +255,7 @@ static int xdp_attach(int ifindex, uint32_t *xdp_flags, int prog_fd)
 
             case EEXIST:
             {
-                xdp_detach(ifindex, *xdp_flags);
+                xdp_detach(ifindex, xdp_flags);
                 fprintf(stderr, "Additional: XDP already loaded on device.\n");
                 break;
             }
@@ -331,6 +334,13 @@ int main(int argc, char **argv)
     if (!bpf_obj) 
     {
         fprintf(stderr, "Error opening BPF object file.");
+
+        exit(EXIT_FAILURE);
+    }
+
+    if (xdp_attach(ifidx, XDP_FLAGS_DRV_MODE, progfd) != 0)
+    {
+        fprintf(stderr, "Error attaching XDP program: %s\n", strerror(errno));
 
         exit(EXIT_FAILURE);
     }
