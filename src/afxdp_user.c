@@ -28,6 +28,7 @@
 #define FRAME_SIZE XSK_UMEM__DEFAULT_FRAME_SIZE
 #define RX_BATCH_SIZE 64
 #define INVALID_UMEM_FRAME UINT64_MAX
+#define MAX_CPUS 64
 
 struct xsk_umem_info 
 {
@@ -381,17 +382,16 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
+    struct xsk_umem_info *umem[MAX_CPUS];
+    struct xsk_socket_info *xsk_socket[MAX_CPUS];
     int cpus = 2;
 
     for (int i = 0; i < cpus; i++)
     {
-        struct xsk_umem_info *umem;
-        struct xsk_socket_info *xsk_socket;
-
         /* Initialize shared packet_buffer for umem usage */
-        umem = configure_xsk_umem(packet_buffer, packet_buffer_size);
+        umem[i] = configure_xsk_umem(packet_buffer, packet_buffer_size);
 
-        if (umem == NULL) 
+        if (umem[i] == NULL) 
         {
             fprintf(stderr, "ERROR: Can't create umem \"%s\"\n", strerror(errno));
             
@@ -399,9 +399,9 @@ int main(int argc, char **argv)
         }
 
         /* Open and configure the AF_XDP (xsk) socket */
-        xsk_socket = xsk_configure_socket(umem, i, ifidx);
+        xsk_socket[i] = xsk_configure_socket(umem[i], i, ifidx);
 
-        if (xsk_socket == NULL) 
+        if (xsk_socket[i] == NULL) 
         {
             fprintf(stderr, "ERROR: Can't setup AF_XDP socket \"%s\"\n", strerror(errno));
             
@@ -410,7 +410,7 @@ int main(int argc, char **argv)
 
         pthread_t tid;
 
-        pthread_create(&tid, NULL, PollXSK, (void *)xsk_socket);
+        pthread_create(&tid, NULL, PollXSK, (void *)xsk_socket[i]);
 
         fprintf(stdout, "Created thread %d\n", i);
     }
@@ -424,6 +424,12 @@ int main(int argc, char **argv)
 
     /* Cleanup */
     xdp_detach(ifidx, xdp_flags);
+
+    for (int i = 0; i < cpus; i++)
+    {
+        xsk_socket__delete(xsk_socket[i]->xsk);
+        xsk_umem__delete(umem[i]->umem);
+    }
 
     return EXIT_SUCCESS;
 }
