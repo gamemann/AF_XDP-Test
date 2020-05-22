@@ -408,6 +408,11 @@ int main(int argc, char **argv)
         fprintf(stdout, "Created thread %d\n", i);
     }
 
+    while (cont)
+    {
+        sleep(1);
+    }
+
 	/* Cleanup */
 	xdp_detach(ifidx, XDP_FLAGS_DRV_MODE);
 
