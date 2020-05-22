@@ -427,8 +427,15 @@ int main(int argc, char **argv)
 
     for (int i = 0; i < cpus; i++)
     {
-        xsk_socket__delete(xsk_socket[i]->xsk);
-        xsk_umem__delete(umem[i]->umem);
+        if (xsk_socket[i] != NULL)
+        {
+            xsk_socket__delete(xsk_socket[i]->xsk);
+        }
+
+        if (umem[i] != NULL)
+        {
+            xsk_umem__delete(umem[i]->umem);
+        }
     }
 
     return EXIT_SUCCESS;
