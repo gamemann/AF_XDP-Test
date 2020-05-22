@@ -64,7 +64,7 @@ static inline __u32 xsk_ring_prod__free(struct xsk_ring_prod *r)
 {
     r->cached_cons = *r->consumer + r->size;
     return r->cached_cons - r->cached_prod;
-    }
+}
 
 static struct xsk_umem_info *configure_xsk_umem(void *buffer, uint64_t size)
 {
