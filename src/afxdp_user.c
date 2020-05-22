@@ -408,6 +408,8 @@ int main(int argc, char **argv)
         fprintf(stdout, "Created thread %d\n", i);
     }
 
+    fprintf(stdout, "Starting program...\n");
+
     while (cont)
     {
         sleep(1);
