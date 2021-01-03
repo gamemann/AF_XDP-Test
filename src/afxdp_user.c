@@ -13,6 +13,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/resource.h>
+#include <getopt.h>
 
 #include <arpa/inet.h>
 #include <net/if.h>
@@ -51,8 +52,15 @@ struct xsk_socket_info
     uint32_t outstanding_tx;
 };
 
+const struct option opts[] =
+{
+    {"dev", required_argument, NULL, 'i'},
+    {"sockets", required_argument, NULL, 'c'},
+    {"skb", no_argument, NULL, 's'},
+    {NULL, 0, NULL, 0}
+};
+
 static int cont = 1;
-const char *dev = "ens3";
 static int progfd;
 uint32_t xdp_flags = XDP_FLAGS_DRV_MODE;
 
@@ -112,7 +120,7 @@ static uint64_t xsk_umem_free_frames(struct xsk_socket_info *xsk)
     return xsk->umem_frame_free;
 }
 
-static struct xsk_socket_info *xsk_configure_socket(struct xsk_umem_info *umem, int rxqueue, int ifidx)
+static struct xsk_socket_info *xsk_configure_socket(struct xsk_umem_info *umem, int rxqueue, int ifidx, const char *dev)
 {
     struct xsk_socket_config xsk_cfg;
     struct xsk_socket_info *xsk_info;
@@ -310,6 +318,43 @@ void *PollXSK(void *data)
     pthread_exit(NULL);
 }
 
+static inline unsigned int bpf_num_possible_cpus(void)
+{
+	static const char *fcpu = "/sys/devices/system/cpu/possible";
+	unsigned int start, end, possible_cpus = 0;
+	char buff[128];
+	FILE *fp;
+	int n;
+
+	fp = fopen(fcpu, "r");
+
+	if (!fp) 
+    {
+		printf("Failed to open %s: '%s'!\n", fcpu, strerror(errno));
+		exit(1);
+	}
+
+	while (fgets(buff, sizeof(buff), fp)) 
+    {
+		n = sscanf(buff, "%u-%u", &start, &end);
+		if (n == 0) 
+        {
+			printf("Failed to retrieve # possible CPUs!\n");
+			exit(1);
+		} else if (n == 1) 
+        {
+			end = start;
+		}
+
+		possible_cpus = start == 0 ? end + 1 : 0;
+		break;
+	}
+
+	fclose(fp);
+
+	return possible_cpus;
+}
+
 int main(int argc, char **argv)
 {
     int ret;
@@ -319,6 +364,38 @@ int main(int argc, char **argv)
     uint64_t packet_buffer_size;
     struct rlimit rlim = {RLIM_INFINITY, RLIM_INFINITY};
     struct bpf_object *bpf_obj = NULL;
+
+    int cpus = bpf_num_possible_cpus();
+    char *dev = "ens18";
+
+    int c = -1;
+    while (optind < argc)
+    {
+        if ((c = getopt_long(argc, argv, "i:c:s", opts, NULL)) != -1)
+        {
+            switch (c)
+            {
+                case 'i':
+                    dev = optarg;
+
+                    break;
+
+                case 'c':
+                    cpus = atoi(optarg);
+
+                    break;
+
+                case 's':
+                    xdp_flags = XDP_FLAGS_SKB_MODE;
+
+                    break;
+            }
+        }
+        else
+        {
+            optind++;
+        }
+    }
 
     ifidx = if_nametoindex(dev);
 
@@ -384,7 +461,6 @@ int main(int argc, char **argv)
 
     struct xsk_umem_info *umem[MAX_CPUS];
     struct xsk_socket_info *xsk_socket[MAX_CPUS];
-    int cpus = 2;
 
     for (int i = 0; i < cpus; i++)
     {
@@ -399,7 +475,7 @@ int main(int argc, char **argv)
         }
 
         /* Open and configure the AF_XDP (xsk) socket */
-        xsk_socket[i] = xsk_configure_socket(umem[i], i, ifidx);
+        xsk_socket[i] = xsk_configure_socket(umem[i], i, ifidx, (const char *)dev);
 
         if (xsk_socket[i] == NULL) 
         {
