@@ -52,6 +52,12 @@ struct xsk_socket_info
     uint32_t outstanding_tx;
 };
 
+struct thread_info
+{
+    int id;
+    struct xsk_socket_info *xsk;
+};
+
 const struct option opts[] =
 {
     {"dev", required_argument, NULL, 'i'},
@@ -287,13 +293,13 @@ static int xdp_attach(int ifindex, uint32_t xdp_flags, int prog_fd)
 
 void *PollXSK(void *data)
 {
-    struct xsk_socket_info *xsk = (struct xsk_socket_info *)data;
+    struct thread_info *ti = (struct thread_info *)data;
 
     struct pollfd fds[2];
     int ret, nfds = 1;
 
     memset(fds, 0, sizeof(fds));
-    fds[0].fd = xsk_socket__fd(xsk->xsk);
+    fds[0].fd = xsk_socket__fd(ti->xsk->xsk);
     fds[0].events = POLLIN;
 
     while (cont)
@@ -305,15 +311,16 @@ void *PollXSK(void *data)
 
         uint32_t idx_rx = 0;
 
-        unsigned int rcvd = xsk_ring_cons__peek(&xsk->rx, RX_BATCH_SIZE, &idx_rx);
+        unsigned int rcvd = xsk_ring_cons__peek(&ti->xsk->rx, RX_BATCH_SIZE, &idx_rx);
         if (!rcvd)
             continue;
 
-        fprintf(stdout, "Received packet from AF_XDP socket\n");
+        fprintf(stdout, "Received packet from AF_XDP socket from queue ID %d\n", ti->id);
     }
 
-	xsk_socket__delete(xsk->xsk);
-	xsk_umem__delete(xsk->umem->umem);
+	xsk_socket__delete(ti->xsk->xsk);
+	xsk_umem__delete(ti->xsk->umem->umem);
+    free(ti);
 
     pthread_exit(NULL);
 }
@@ -484,9 +491,14 @@ int main(int argc, char **argv)
             continue;
         }
 
+        struct thread_info *ti = malloc(sizeof(struct thread_info));
+
+        ti->id = i;
+        ti->xsk = xsk_socket[i];
+
         pthread_t tid;
 
-        pthread_create(&tid, NULL, PollXSK, (void *)xsk_socket[i]);
+        pthread_create(&tid, NULL, PollXSK, (void *)ti);
 
         fprintf(stdout, "Created thread %d\n", i);
     }
